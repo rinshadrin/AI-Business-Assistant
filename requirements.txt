@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+pydantic
+sqlalchemy
+pymysql
+python-dotenv
+streamlit
+requests
+pandas
+ollama
+chromadb
+faker
