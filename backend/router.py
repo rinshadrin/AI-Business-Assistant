@@ -1,10 +1,11 @@
 import re
+import json
 
 from sqlalchemy import text, inspect
 
 
 # ============================================================
-# IMPORT DATABASE
+# DATABASE
 # ============================================================
 
 try:
@@ -14,7 +15,7 @@ except ImportError:
 
 
 # ============================================================
-# IMPORT LLM
+# LLM
 # ============================================================
 
 try:
@@ -27,7 +28,7 @@ except ImportError:
 
 
 # ============================================================
-# IMPORT RAG
+# RAG
 # ============================================================
 
 try:
@@ -40,29 +41,51 @@ except Exception:
 
 
 # ============================================================
-# DATABASE CONNECTION
+# GET DATABASE ENGINE
 # ============================================================
 
 def get_engine():
+
     session = SessionLocal()
 
     try:
-        engine = session.get_bind()
+        return session.get_bind()
 
-        print("[DATABASE] Connected to:", engine.url)
-
-        return engine
-
-    except Exception as e:
+    finally:
         session.close()
-
-        print("[DATABASE CONNECTION ERROR]", e)
-
-        raise
 
 
 # ============================================================
-# READ ACTUAL DATABASE SCHEMA + RELATIONSHIPS
+# GET REAL DATABASE TABLES
+# ============================================================
+
+def get_real_database_tables():
+
+    session = SessionLocal()
+
+    try:
+
+        engine = session.get_bind()
+
+        inspector = inspect(engine)
+
+        tables = inspector.get_table_names()
+
+        return sorted(tables)
+
+    except Exception as e:
+
+        print("[TABLE ERROR]", e)
+
+        return []
+
+    finally:
+
+        session.close()
+
+
+# ============================================================
+# GET REAL DATABASE SCHEMA
 # ============================================================
 
 def get_database_schema():
@@ -70,141 +93,79 @@ def get_database_schema():
     session = SessionLocal()
 
     try:
+
         engine = session.get_bind()
+
         inspector = inspect(engine)
 
-        table_names = inspector.get_table_names()
+        tables = inspector.get_table_names()
 
-        print("[SCHEMA] Tables found:", table_names)
+        schema = []
 
-        if not table_names:
-            print("[SCHEMA] WARNING: No tables found!")
-            return ""
+        for table in tables:
 
-        schema_parts = []
-        relationships = []
-
-        for table_name in table_names:
-
-            print(f"[SCHEMA] Reading table: {table_name}")
-
-            columns_info = inspector.get_columns(table_name)
-
-            # ------------------------------------------------
-            # PRIMARY KEYS
-            # ------------------------------------------------
-
-            try:
-                pk_info = inspector.get_pk_constraint(table_name)
-
-                pk_columns = pk_info.get(
-                    "constrained_columns",
-                    []
-                )
-
-            except Exception:
-                pk_columns = []
-
-            column_lines = []
-
-            for column in columns_info:
-
-                column_name = column["name"]
-                column_type = str(column["type"])
-
-                primary_key = ""
-
-                if column_name in pk_columns:
-                    primary_key = " PRIMARY KEY"
-
-                column_lines.append(
-                    f"- {column_name} {column_type}{primary_key}"
-                )
-
-            schema_parts.append(
-                f"TABLE: {table_name}\n"
-                + "\n".join(column_lines)
+            schema.append(
+                f"TABLE: {table}"
             )
 
-            # ------------------------------------------------
-            # FOREIGN KEYS
-            # ------------------------------------------------
+            columns = inspector.get_columns(table)
+
+            for column in columns:
+
+                schema.append(
+                    f"  COLUMN: {column['name']}"
+                )
+
+            schema.append("")
+
+        schema.append("RELATIONSHIPS:")
+
+        for table in tables:
 
             try:
+
                 foreign_keys = inspector.get_foreign_keys(
-                    table_name
+                    table
                 )
 
                 for fk in foreign_keys:
 
-                    constrained_columns = fk.get(
-                        "constrained_columns",
-                        []
+                    local_columns = (
+                        fk.get("constrained_columns") or []
                     )
 
-                    referred_table = fk.get(
+                    remote_table = fk.get(
                         "referred_table"
                     )
 
-                    referred_columns = fk.get(
-                        "referred_columns",
-                        []
+                    remote_columns = (
+                        fk.get("referred_columns") or []
                     )
 
-                    if (
-                        referred_table
-                        and constrained_columns
-                        and referred_columns
+                    for local, remote in zip(
+                        local_columns,
+                        remote_columns
                     ):
 
-                        for local_col, remote_col in zip(
-                            constrained_columns,
-                            referred_columns
-                        ):
-
-                            relationships.append(
-                                f"{table_name}.{local_col} "
-                                f"-> "
-                                f"{referred_table}.{remote_col}"
-                            )
+                        schema.append(
+                            f"{table}.{local} -> "
+                            f"{remote_table}.{remote}"
+                        )
 
             except Exception as e:
 
                 print(
-                    f"[SCHEMA] Foreign key error "
-                    f"for {table_name}: {e}"
+                    f"[FK WARNING] {table}: {e}"
                 )
 
-        schema = "\n\n".join(schema_parts)
-
-        # ----------------------------------------------------
-        # ADD RELATIONSHIPS
-        # ----------------------------------------------------
-
-        schema += "\n\nRELATIONSHIPS:\n"
-
-        if relationships:
-
-            for relationship in relationships:
-                schema += f"- {relationship}\n"
-
-        else:
-
-            schema += (
-                "- No foreign-key relationships were "
-                "reported by the database.\n"
-            )
-
-        print("[SCHEMA] Successfully loaded.")
-
-        print("\n[SCHEMA WITH RELATIONSHIPS]")
-        print(schema)
-
-        return schema
+        return "\n".join(schema)
 
     except Exception as e:
 
-        print("[SCHEMA ERROR]:", e)
+        print(
+            "[SCHEMA ERROR]",
+            e
+        )
 
         return ""
 
@@ -214,7 +175,7 @@ def get_database_schema():
 
 
 # ============================================================
-# READ ACTUAL DATABASE INFORMATION
+# DATABASE OVERVIEW
 # ============================================================
 
 def get_database_information():
@@ -225,76 +186,52 @@ def get_database_information():
 
         engine = session.get_bind()
 
-        print("[DATABASE] Connected to:", engine.url)
-
         inspector = inspect(engine)
 
-        table_names = inspector.get_table_names()
+        tables = inspector.get_table_names()
 
-        print("[DATABASE] Tables found:", table_names)
+        result = []
 
-        if not table_names:
-
-            print(
-                "[DATABASE] WARNING: Database has no tables."
-            )
-
-            return []
-
-        information = []
-
-        for table_name in table_names:
-
-            print(
-                f"[DATABASE] Reading table: {table_name}"
-            )
-
-            columns_info = inspector.get_columns(
-                table_name
-            )
+        for table in tables:
 
             columns = [
                 column["name"]
-                for column in columns_info
+                for column in inspector.get_columns(table)
             ]
 
             try:
 
                 count = session.execute(
                     text(
-                        f'SELECT COUNT(*) '
-                        f'FROM "{table_name}"'
+                        f"SELECT COUNT(*) "
+                        f"FROM `{table}`"
                     )
                 ).scalar()
 
             except Exception as e:
 
                 print(
-                    f"[DATABASE] Count error "
-                    f"for {table_name}: {e}"
+                    f"[COUNT ERROR] {table}: {e}"
                 )
 
                 count = "Unknown"
 
-            information.append(
+            result.append(
                 {
-                    "table": table_name,
+                    "table": table,
                     "columns": columns,
                     "rows": count
                 }
             )
 
-        print(
-            "[DATABASE] Successfully read",
-            len(information),
-            "tables."
-        )
-
-        return information
+        return result
 
     except Exception as e:
 
-        print("[DATABASE ERROR]:", e)
+        print(
+            "[DATABASE INFORMATION ERROR]",
+            e
+        )
 
         return []
 
@@ -304,289 +241,488 @@ def get_database_information():
 
 
 # ============================================================
-# DATABASE OVERVIEW DETECTOR
-# ============================================================
-
-def is_database_overview_question(question):
-
-    q = question.lower().strip()
-
-    q = re.sub(
-        r"[?.!,]",
-        "",
-        q
-    )
-
-    patterns = [
-
-        "explain the data in the database",
-        "explain data in the database",
-        "explain the database",
-        "explain our database",
-        "describe the database",
-        "describe our database",
-        "database overview",
-        "overview of the database",
-        "overview of our database",
-        "what data is in the database",
-        "what data is stored in the database",
-        "what information is stored in the database",
-        "what information is in the database",
-        "what information do we have in the database",
-        "what data do we have in the database",
-        "what tables do we have",
-        "what tables are in the database",
-        "show me the database structure",
-        "show the database structure",
-        "explain the database structure",
-        "what kind of data do we have",
-        "what kind of information do we have",
-        "tell me about the database",
-        "tell me about our database",
-        "give me an overview of the database",
-        "give me an overview of our database"
-    ]
-
-    for pattern in patterns:
-
-        if pattern in q:
-            return True
-
-    if "explain" in q and "database" in q:
-        return True
-
-    if "describe" in q and "database" in q:
-        return True
-
-    if "overview" in q and "database" in q:
-        return True
-
-    if "tables" in q and "database" in q:
-        return True
-
-    if "data" in q and "database" in q:
-        return True
-
-    return False
-
-
-# ============================================================
 # DATABASE OVERVIEW ANSWER
 # ============================================================
 
-def generate_database_overview(question):
+def generate_database_overview():
 
-    print("[OVERVIEW] Reading database...")
+    info = get_database_information()
 
-    database_info = get_database_information()
-
-    print(
-        "[OVERVIEW] Database information loaded."
-    )
-
-    if not database_info:
+    if not info:
 
         return (
             "I could not find any tables "
             "in the connected database."
         )
 
-    answer = ""
-
-    answer += "## 🗄️ Database Overview\n\n"
-
-    answer += (
-        "Your business database contains "
-        f"**{len(database_info)} tables**.\n\n"
+    answer = (
+        f"The database contains "
+        f"{len(info)} tables.\n\n"
     )
 
-    for item in database_info:
-
-        table_name = item["table"]
-        columns = item["columns"]
-        rows = item["rows"]
+    for item in info:
 
         answer += (
-            f"### 📋 {table_name}\n\n"
+            f"**{item['table']}** — "
+            f"{item['rows']} records\n"
         )
-
-        answer += (
-            f"**Records:** {rows}\n\n"
-        )
-
-        answer += "**Columns:**\n"
-
-        for column in columns:
-
-            answer += f"- `{column}`\n"
-
-        answer += "\n"
-
-    answer += "---\n\n"
-
-    answer += (
-        "### 💼 Business information available\n\n"
-    )
-
-    answer += (
-        "This database can be used to answer "
-        "questions about customers, products, "
-        "orders, inventory, suppliers, payments, "
-        "employees, sales, revenue and business "
-        "performance.\n"
-    )
 
     return answer
 
 
 # ============================================================
-# QUESTION CLASSIFICATION
+# DIRECT DATABASE STRUCTURE QUESTION
 # ============================================================
 
-def classify_question(question):
+def handle_database_structure_question(question):
 
-    if is_database_overview_question(question):
-        return "database_overview"
+    q = question.lower().strip()
+
+    # --------------------------------------------------------
+    # HOW MANY TABLES
+    # --------------------------------------------------------
+
+    table_count_patterns = [
+
+        r"\bhow many tables\b",
+
+        r"\bhow many table\b",
+
+        r"\bnumber of tables\b",
+
+        r"\bnumber of table\b",
+
+        r"\btotal tables\b",
+
+        r"\btotal number of tables\b",
+
+        r"\bhow much tables\b",
+
+        r"\bhow many database tables\b",
+
+    ]
+
+    if any(
+        re.search(
+            pattern,
+            q
+        )
+        for pattern in table_count_patterns
+    ):
+
+        tables = get_real_database_tables()
+
+        count = len(tables)
+
+        print(
+            f"[DATABASE STRUCTURE] REAL TABLE COUNT = {count}"
+        )
+
+        return {
+            "type": "database_overview",
+
+            "data": {
+                "table_count": count,
+                "tables": tables
+            },
+
+            "sql": None,
+
+            "intent": "count database tables",
+
+            "answer":
+                f"We have {count} tables in the database."
+        }
+
+
+    # --------------------------------------------------------
+    # LIST TABLES
+    # --------------------------------------------------------
+
+    list_patterns = [
+
+        r"\blist tables\b",
+
+        r"\bshow tables\b",
+
+        r"\blist all tables\b",
+
+        r"\bshow all tables\b",
+
+        r"\bwhat tables do we have\b",
+
+        r"\bwhich tables do we have\b",
+
+        r"\bwhat are the tables\b",
+
+        r"\btable names\b",
+
+        r"\bnames of tables\b",
+
+        r"\blist database tables\b",
+
+    ]
+
+    if any(
+        re.search(
+            pattern,
+            q
+        )
+        for pattern in list_patterns
+    ):
+
+        tables = get_real_database_tables()
+
+        if not tables:
+
+            return {
+                "type": "database_overview",
+                "data": None,
+                "sql": None,
+                "intent": "list database tables",
+                "answer":
+                    "I could not find any tables in the database."
+            }
+
+        answer = (
+            f"The database contains "
+            f"{len(tables)} tables:\n\n"
+        )
+
+        for index, table in enumerate(
+            tables,
+            start=1
+        ):
+
+            answer += (
+                f"{index}. {table}\n"
+            )
+
+        return {
+            "type": "database_overview",
+
+            "data": {
+                "table_count": len(tables),
+                "tables": tables
+            },
+
+            "sql": None,
+
+            "intent": "list database tables",
+
+            "answer": answer
+        }
+
+
+    # --------------------------------------------------------
+    # DATABASE STRUCTURE / SCHEMA
+    # --------------------------------------------------------
+
+    structure_patterns = [
+
+        "database structure",
+
+        "database schema",
+
+        "show schema",
+
+        "show database schema",
+
+        "show database structure",
+
+        "what is the database structure",
+
+        "what is the database schema",
+
+        "tables and columns",
+
+        "show tables and columns",
+
+        "list tables and columns",
+
+    ]
+
+    if any(
+        phrase in q
+        for phrase in structure_patterns
+    ):
+
+        info = get_database_information()
+
+        if not info:
+
+            return {
+                "type": "database_overview",
+                "data": None,
+                "sql": None,
+                "intent": "database structure",
+                "answer":
+                    "I could not read the database structure."
+            }
+
+        answer = (
+            f"## Database Structure\n\n"
+            f"The database contains "
+            f"**{len(info)} tables**.\n\n"
+        )
+
+        for item in info:
+
+            answer += (
+                f"### {item['table']}\n"
+            )
+
+            answer += (
+                f"Records: **{item['rows']}**\n\n"
+            )
+
+            answer += "Columns:\n"
+
+            for column in item["columns"]:
+
+                answer += (
+                    f"- `{column}`\n"
+                )
+
+            answer += "\n"
+
+        return {
+            "type": "database_overview",
+
+            "data": info,
+
+            "sql": None,
+
+            "intent": "database structure",
+
+            "answer": answer
+        }
+
+
+    return None
+
+
+# ============================================================
+# EXTRACT JSON
+# ============================================================
+
+def extract_json(response):
+
+    if not response:
+        return None
+
+    raw = str(response).strip()
+
+    raw = re.sub(
+        r"```json\s*",
+        "",
+        raw,
+        flags=re.IGNORECASE
+    )
+
+    raw = re.sub(
+        r"```",
+        "",
+        raw
+    ).strip()
+
+    # First try complete response
+    try:
+
+        data = json.loads(raw)
+
+        if isinstance(data, dict):
+            return data
+
+    except Exception:
+        pass
+
+    # Try extracting JSON object
+    match = re.search(
+        r"\{.*\}",
+        raw,
+        flags=re.DOTALL
+    )
+
+    if match:
+
+        try:
+
+            data = json.loads(
+                match.group(0)
+            )
+
+            if isinstance(data, dict):
+                return data
+
+        except Exception:
+            pass
+
+    return None
+
+
+# ============================================================
+# UNDERSTAND QUESTION
+# ============================================================
+
+def understand_question(question):
+
+    # IMPORTANT:
+    # Database structure questions are already handled
+    # before this function is called.
 
     schema = get_database_schema()
 
     prompt = f"""
-You are the router of an AI Business Assistant.
+You are the intelligent router of an AI Business Assistant.
 
-Classify the user's question into exactly ONE
-of these categories:
+Understand the user's question by MEANING.
+
+Choose exactly ONE route:
 
 SQL
+- live information from database
+- customers
+- products
+- orders
+- sales
+- revenue
+- costs
+- inventory
+- suppliers
+- employees
+- payments
+- profit
+- loss
+- counts of business records
+- totals
+- averages
+- rankings
+- comparisons
+
 RAG
+- company documents
+- policies
+- manuals
+- procedures
+- guidelines
+- business documents
+- unstructured information
 
-================================================
-SQL
-================================================
+DATABASE_OVERVIEW
+- number of database tables
+- names of database tables
+- database schema
+- database structure
+- table columns
+- relationships between tables
 
-Use SQL when the question asks about actual
-business data stored in the database.
+IMPORTANT:
 
-Examples:
+Questions such as:
 
-How many customers do we have?
-SQL
+"how many tables do we have?"
+"how many tables are there?"
+"list the tables"
+"show database structure"
 
-Which products have low stock?
-SQL
+must be DATABASE_OVERVIEW.
 
-Which products need restocking?
-SQL
+Do NOT treat those questions as normal SQL business questions.
 
-Show the top 5 expensive products.
-SQL
-
-Who are our top customers?
-SQL
-
-What is our total revenue?
-SQL
-
-Are we making a profit or loss?
-SQL
-
-How many orders have been placed?
-SQL
-
-Which customer ordered the least?
-SQL
-
-Which customer spent the most?
-SQL
-
-What products did the customer who spent the
-most money buy?
-SQL
-
-================================================
-RAG
-================================================
-
-Use RAG only for company documents, policies,
-procedures, manuals and rules.
-
-Examples:
-
-What is our refund policy?
-RAG
-
-What is the leave policy?
-RAG
-
-How can employees apply for leave?
-RAG
-
-================================================
-DATABASE QUESTIONS
-================================================
-
-Questions about tables, columns, records,
-customers, products, orders, suppliers,
-employees, payments, inventory, revenue,
-sales or business performance are SQL.
-
-================================================
-DATABASE SCHEMA
-================================================
-
-{schema}
-
-================================================
-USER QUESTION
-================================================
-
+USER QUESTION:
 {question}
 
-Return ONLY:
+DATABASE SCHEMA:
+{schema}
 
-SQL
+Return ONLY valid JSON:
 
-or
-
-RAG
+{{
+    "route": "SQL",
+    "intent": "what the user wants",
+    "needs_database": true,
+    "needs_documents": false
+}}
 """
+
+    if ask_llm is None:
+
+        return {
+            "route": "SQL",
+            "intent": "business database question",
+            "needs_database": True,
+            "needs_documents": False
+        }
 
     try:
 
-        if ask_llm is None:
-            return "sql"
-
         response = ask_llm(prompt)
 
-        result = response.strip().upper()
+        print("\n[LLM ROUTER]")
+        print(response)
 
-        print(
-            "[CLASSIFIER RESULT]:",
-            result
-        )
+        result = extract_json(response)
 
-        # Check SQL first because the word SQL
-        # is the expected database route.
+        if not result:
 
-        if re.search(
-            r"\bSQL\b",
-            result
-        ):
-            return "sql"
+            raise ValueError(
+                "Invalid JSON from LLM"
+            )
 
-        if re.search(
-            r"\bRAG\b",
-            result
-        ):
-            return "rag"
+        route = str(
+            result.get(
+                "route",
+                "SQL"
+            )
+        ).upper().strip()
+
+        if route not in {
+            "SQL",
+            "RAG",
+            "DATABASE_OVERVIEW"
+        }:
+
+            route = "SQL"
+
+        return {
+            "route": route,
+
+            "intent": str(
+                result.get(
+                    "intent",
+                    "business question"
+                )
+            ),
+
+            "needs_database": bool(
+                result.get(
+                    "needs_database",
+                    route == "SQL"
+                )
+            ),
+
+            "needs_documents": bool(
+                result.get(
+                    "needs_documents",
+                    route == "RAG"
+                )
+            )
+        }
 
     except Exception as e:
 
         print(
-            "[CLASSIFIER ERROR]:",
+            "[ROUTER ERROR]:",
             e
         )
 
-    return "sql"
+        return {
+            "route": "SQL",
+            "intent": "business database question",
+            "needs_database": True,
+            "needs_documents": False
+        }
 
 
 # ============================================================
@@ -598,11 +734,10 @@ def clean_sql(raw_sql):
     if not raw_sql:
         return ""
 
-    sql = raw_sql.strip()
+    sql = str(raw_sql).strip()
 
-    # Remove markdown code fences
     sql = re.sub(
-        r"```sql",
+        r"```sql\s*",
         "",
         sql,
         flags=re.IGNORECASE
@@ -612,9 +747,8 @@ def clean_sql(raw_sql):
         r"```",
         "",
         sql
-    )
+    ).strip()
 
-    # Find SELECT
     match = re.search(
         r"\bSELECT\b",
         sql,
@@ -626,31 +760,137 @@ def clean_sql(raw_sql):
 
     sql = sql[match.start():]
 
-    # Remove anything after first semicolon
-    semicolon = sql.find(";")
-
-    if semicolon != -1:
-        sql = sql[:semicolon]
+    if ";" in sql:
+        sql = sql.split(";")[0]
 
     return sql.strip()
 
 
 # ============================================================
-# SQL VALIDATION
+# GENERATE SQL
+# ============================================================
+
+def generate_sql(question, intent=""):
+
+    schema = get_database_schema()
+
+    prompt = f"""
+You are an expert Text-to-SQL engine.
+
+Convert the user's natural-language business question
+into ONE correct MySQL SELECT query.
+
+USER QUESTION:
+{question}
+
+USER INTENT:
+{intent}
+
+REAL DATABASE SCHEMA:
+{schema}
+
+IMPORTANT RULES:
+
+1. Use ONLY tables shown in the schema.
+2. Use ONLY columns shown in the schema.
+3. Use ONLY real foreign-key relationships.
+4. NEVER invent tables.
+5. NEVER invent columns.
+6. NEVER invent aliases.
+7. Every alias must be defined by FROM or JOIN.
+8. The query MUST contain FROM.
+9. Only SELECT is allowed.
+
+For "who" questions:
+return names/entities, not COUNT.
+
+For "which" questions:
+return requested entities.
+
+For "how many":
+use COUNT.
+
+For total:
+use SUM where appropriate.
+
+For average:
+use AVG.
+
+For highest/top/most:
+use ORDER BY DESC.
+
+For lowest/least:
+use ORDER BY ASC.
+
+For rankings:
+return the ranked records.
+
+For profit/loss:
+use actual revenue and cost information
+available in the schema.
+
+Do NOT invent profit columns.
+
+Do NOT invent expense columns.
+
+Do NOT multiply an already-complete order total
+by order-item quantity.
+
+Never use:
+
+INSERT
+UPDATE
+DELETE
+DROP
+ALTER
+CREATE
+TRUNCATE
+REPLACE
+GRANT
+REVOKE
+
+Return ONLY the SQL query.
+No markdown.
+No explanation.
+"""
+
+    if ask_llm is None:
+        return ""
+
+    try:
+
+        response = ask_llm(prompt)
+
+        sql = clean_sql(response)
+
+        print("\n[GENERATED SQL]")
+        print(sql)
+
+        return sql
+
+    except Exception as e:
+
+        print(
+            "[SQL GENERATION ERROR]:",
+            e
+        )
+
+        return ""
+
+
+# ============================================================
+# VALIDATE SQL
 # ============================================================
 
 def validate_sql(sql):
 
     if not sql:
 
-        return (
-            False,
-            "SQL query is empty."
-        )
+        return False, "Empty SQL query."
 
-    sql_upper = sql.upper().strip()
+    upper = sql.upper().strip()
 
-    if not sql_upper.startswith("SELECT"):
+    if not upper.startswith("SELECT"):
 
         return (
             False,
@@ -658,7 +898,6 @@ def validate_sql(sql):
         )
 
     forbidden = [
-
         "INSERT",
         "UPDATE",
         "DELETE",
@@ -671,295 +910,43 @@ def validate_sql(sql):
         "REVOKE"
     ]
 
-    for keyword in forbidden:
+    for word in forbidden:
 
         if re.search(
-            rf"\b{keyword}\b",
-            sql_upper
+            rf"\b{word}\b",
+            upper
         ):
 
             return (
                 False,
-                f"Unsafe SQL keyword: {keyword}"
+                f"Unsafe SQL keyword: {word}"
             )
+
+    if not re.search(
+        r"\bFROM\b",
+        upper
+    ):
+
+        return (
+            False,
+            "SELECT query must contain FROM."
+        )
 
     return True, None
 
 
 # ============================================================
-# GENERATE SQL
-# ============================================================
-
-def generate_sql(question):
-
-    schema = get_database_schema()
-
-    if not schema:
-
-        print(
-            "[SQL] No database schema found."
-        )
-
-        return ""
-
-    prompt = f"""
-You are an expert SQL generator for an ERP
-Business Assistant.
-
-Your job is to generate ONE correct SQL SELECT
-query that answers the user's question.
-
-================================================
-DATABASE SCHEMA
-================================================
-
-{schema}
-
-================================================
-CRITICAL DATABASE RELATIONSHIP RULE
-================================================
-
-You MUST follow the relationships listed in
-the schema.
-
-NEVER assume that a column belongs to a table.
-
-For example:
-
-If orders contains customer_id but does NOT
-contain customer_name, you MUST JOIN customers.
-
-Correct:
-
-customers AS c
-JOIN orders AS o
-ON c.customer_id = o.customer_id
-
-Incorrect:
-
-orders AS o
-SELECT o.customer_name
-
-For product information, use products.
-
-For order quantities, use order_items.
-
-For customer information, use customers.
-
-For order information, use orders.
-
-For relationships, follow the actual foreign
-keys listed in the schema.
-
-================================================
-COMMON ERP RELATIONSHIPS
-================================================
-
-When these tables exist, the normal relationship
-is generally:
-
-customers.customer_id
-    ->
-orders.customer_id
-
-orders.order_id
-    ->
-order_items.order_id
-
-products.product_id
-    ->
-order_items.product_id
-
-BUT ALWAYS CHECK THE ACTUAL RELATIONSHIPS
-LISTED IN THE DATABASE SCHEMA ABOVE.
-
-================================================
-USER QUESTION
-================================================
-
-{question}
-
-================================================
-SQL RULES
-================================================
-
-1. Return ONLY SQL.
-
-2. SELECT queries only.
-
-3. Never invent tables.
-
-4. Never invent columns.
-
-5. Use ONLY columns present in the schema.
-
-6. Use table aliases carefully.
-
-7. Never select a column from an alias unless
-   that column actually exists in that alias's
-   table.
-
-8. Use correct JOIN conditions.
-
-9. Follow foreign-key relationships.
-
-10. If customer_name is needed, JOIN the
-    customers table if necessary.
-
-11. If product_name is needed, JOIN the
-    products table if necessary.
-
-12. If order quantity is needed, use
-    order_items.quantity when available.
-
-13. If the user asks "how many", use COUNT(*)
-    or an appropriate aggregate.
-
-14. If the user asks "which", "who", "show",
-    "list", "give me" or "what are", return
-    actual records.
-
-15. NEVER convert a list question into COUNT(*).
-
-16. TOP N must return N records.
-
-17. Cheapest means price ASC.
-
-18. Most expensive means price DESC.
-
-19. Highest means DESC.
-
-20. Lowest means ASC.
-
-21. Low stock means:
-
-    stock_quantity <= reorder_level
-
-22. For low-stock questions return useful
-    product information including:
-    product name, stock quantity and
-    reorder level when those columns exist.
-
-23. For expensive/cheap product questions,
-    return product name and price.
-
-24. For customer spending questions, calculate
-    spending from the correct database fields.
-
-25. If orders.total_amount represents the
-    complete order value, use orders.total_amount.
-
-26. Do NOT multiply orders.total_amount by
-    order_items.quantity.
-
-27. For best-selling products, use
-    order_items.quantity when available.
-
-28. Use GROUP BY when aggregation is required.
-
-29. Use ORDER BY for rankings.
-
-30. Use LIMIT for TOP N.
-
-31. Preserve user filters.
-
-32. Preserve dates.
-
-33. If a question asks for a customer's products,
-    JOIN customers -> orders -> order_items
-    -> products when those relationships exist.
-
-34. If a question asks for the customer who
-    ordered the least, determine the customer
-    using order counts and then retrieve that
-    customer's actual information.
-
-35. If a question asks which customer spent the
-    most, calculate spending per customer and
-    rank it correctly.
-
-36. If a question asks for customers who never
-    ordered, use an appropriate LEFT JOIN or
-    NOT EXISTS query.
-
-37. If a question asks for products never ordered,
-    use an appropriate LEFT JOIN or NOT EXISTS
-    query.
-
-38. Do not use INSERT.
-
-39. Do not use UPDATE.
-
-40. Do not use DELETE.
-
-41. Do not use DROP.
-
-42. Do not use ALTER.
-
-43. Do not use CREATE.
-
-44. Do not add explanations.
-
-45. Do not use markdown.
-
-Return ONLY the SQL query.
-"""
-
-    try:
-
-        print(
-            "[SQL] Asking LLM to generate SQL..."
-        )
-
-        if ask_llm is None:
-
-            print(
-                "[SQL] LLM is not available."
-            )
-
-            return ""
-
-        raw_sql = ask_llm(prompt)
-
-    except Exception as e:
-
-        print(
-            "[SQL GENERATION ERROR]:",
-            e
-        )
-
-        return ""
-
-    sql = clean_sql(raw_sql)
-
-    print("\n[GENERATED SQL]")
-    print(sql)
-
-    return sql
-
-
-# ============================================================
-# EXTRA SCHEMA-AWARE SQL VALIDATION
+# VALIDATE SQL AGAINST REAL SCHEMA
 # ============================================================
 
 def validate_sql_against_schema(sql):
-
-    """
-    Basic validation to catch obvious cases where
-    the generated SQL references a table alias and
-    column that does not exist.
-
-    Database execution remains the final authority.
-    """
-
-    if not sql:
-        return True, None
 
     session = SessionLocal()
 
     try:
 
         engine = session.get_bind()
+
         inspector = inspect(engine)
 
         tables = inspector.get_table_names()
@@ -969,75 +956,87 @@ def validate_sql_against_schema(sql):
         for table in tables:
 
             table_columns[table] = {
-                column["name"]
-                for column in inspector.get_columns(table)
+                c["name"]
+                for c in inspector.get_columns(table)
             }
 
         # ----------------------------------------------------
-        # Find aliases from FROM/JOIN
+        # FIND TABLES AND ALIASES
         # ----------------------------------------------------
-
-        alias_pattern = re.compile(
-            r"""
-            \b
-            (?:FROM|JOIN)
-            \s+
-            [`"]?([A-Za-z_][A-Za-z0-9_]*)[`"]?
-            \s+
-            (?:AS\s+)?
-            ([A-Za-z_][A-Za-z0-9_]*)
-            """,
-            re.IGNORECASE | re.VERBOSE
-        )
 
         aliases = {}
 
-        for match in alias_pattern.finditer(sql):
+        pattern = re.compile(
+            r"\b(?:FROM|JOIN)\s+"
+            r"[`\"]?([A-Za-z_][A-Za-z0-9_]*)[`\"]?"
+            r"(?:\s+(?:AS\s+)?"
+            r"([A-Za-z_][A-Za-z0-9_]*))?",
+            flags=re.IGNORECASE
+        )
 
-            table_name = match.group(1)
+        for match in pattern.finditer(sql):
+
+            table = match.group(1)
+
             alias = match.group(2)
 
-            if table_name in table_columns:
+            if table not in table_columns:
 
-                aliases[alias] = table_name
+                return (
+                    False,
+                    f"Table '{table}' does not exist."
+                )
+
+            aliases[table] = table
+
+            if alias:
+
+                aliases[alias] = table
+
+        if not aliases:
+
+            return (
+                False,
+                "No valid database table found."
+            )
 
         # ----------------------------------------------------
-        # Find alias.column references
+        # CHECK ALIAS.COLUMNS
         # ----------------------------------------------------
 
         column_pattern = re.compile(
-            r"\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\b"
+            r"\b([A-Za-z_][A-Za-z0-9_]*)"
+            r"\.([A-Za-z_][A-Za-z0-9_]*)\b"
         )
 
         for match in column_pattern.finditer(sql):
 
             alias = match.group(1)
+
             column = match.group(2)
 
-            if alias in aliases:
+            if alias not in aliases:
+                continue
 
-                table_name = aliases[alias]
+            table = aliases[alias]
 
-                if column not in table_columns[table_name]:
+            if column not in table_columns[table]:
 
-                    return (
-                        False,
-                        f"Column '{column}' does not exist "
-                        f"in table '{table_name}' "
-                        f"(alias '{alias}')."
-                    )
+                return (
+                    False,
+                    f"Column '{column}' does not exist "
+                    f"in table '{table}'."
+                )
 
         return True, None
 
     except Exception as e:
 
         print(
-            "[SCHEMA VALIDATION WARNING]:",
+            "[SCHEMA CHECK WARNING]:",
             e
         )
 
-        # Do not block a valid query because the
-        # optional validator itself failed.
         return True, None
 
     finally:
@@ -1056,23 +1055,17 @@ def execute_sql(sql):
     if not valid:
         raise ValueError(error)
 
-    schema_valid, schema_error = (
-        validate_sql_against_schema(sql)
-    )
+    valid, error = validate_sql_against_schema(sql)
 
-    if not schema_valid:
-
-        raise ValueError(
-            f"Schema validation failed: {schema_error}"
-        )
+    if not valid:
+        raise ValueError(error)
 
     session = SessionLocal()
 
     try:
 
-        print(
-            "[DATABASE] Executing SQL..."
-        )
+        print("\n[DATABASE SQL]")
+        print(sql)
 
         result = session.execute(
             text(sql)
@@ -1086,7 +1079,7 @@ def execute_sql(sql):
         ]
 
         print(
-            "[DATABASE] Rows returned:",
+            "[DATABASE] Rows:",
             len(data)
         )
 
@@ -1103,6 +1096,7 @@ def execute_sql(sql):
 
 def repair_sql(
     question,
+    intent,
     bad_sql,
     error_message
 ):
@@ -1110,122 +1104,64 @@ def repair_sql(
     schema = get_database_schema()
 
     prompt = f"""
-You are an expert SQL debugger for an ERP
-database.
+You are an expert SQL debugger.
 
-The generated SQL failed.
+Repair the SQL query so it correctly answers
+the user's question.
 
-Fix the SQL while preserving the user's
-original question.
-
-================================================
-DATABASE SCHEMA
-================================================
-
-{schema}
-
-================================================
-USER QUESTION
-================================================
-
+USER QUESTION:
 {question}
 
-================================================
-FAILED SQL
-================================================
+INTENT:
+{intent}
 
+FAILED SQL:
 {bad_sql}
 
-================================================
-DATABASE ERROR
-================================================
-
+DATABASE ERROR:
 {error_message}
 
-================================================
-CRITICAL
-================================================
+REAL DATABASE SCHEMA:
+{schema}
 
-The database schema above is authoritative.
+RULES:
 
-DO NOT invent columns.
+Use ONLY real tables.
 
-If a column belongs to another table, JOIN
-that table.
+Use ONLY real columns.
 
-For example, if:
+Use ONLY real foreign keys.
 
-customers.customer_id
-    ->
-orders.customer_id
+Every alias must be defined by FROM or JOIN.
 
-then customer_name must come from customers,
-not orders.
+Do not invent aliases.
 
-If product_name is needed, use products.
+Do not invent tables.
 
-If quantity is needed, use order_items.
+Do not invent columns.
 
-Follow the foreign-key relationships.
+The query MUST contain FROM.
 
-================================================
-RULES
-================================================
+Preserve the user's meaning.
 
-1. Return ONLY one SELECT query.
+Only SELECT is allowed.
 
-2. Use only existing tables.
-
-3. Use only existing columns.
-
-4. Fix invalid columns.
-
-5. Fix incorrect aliases.
-
-6. Fix JOIN problems.
-
-7. Preserve the original question.
-
-8. Preserve filters.
-
-9. Preserve aggregation.
-
-10. Preserve ORDER BY.
-
-11. Preserve LIMIT.
-
-12. If the user asks for records,
-    return records.
-
-13. Do not convert list questions
-    into COUNT(*).
-
-14. Use correct foreign-key relationships.
-
-15. SELECT only.
-
-16. No explanation.
-
-Return ONLY corrected SQL.
+Return ONLY the corrected SQL.
 """
+
+    if ask_llm is None:
+        return ""
 
     try:
 
-        print(
-            "[SQL REPAIR] Asking LLM..."
-        )
+        response = ask_llm(prompt)
 
-        if ask_llm is None:
-            return ""
+        sql = clean_sql(response)
 
-        raw_sql = ask_llm(prompt)
+        print("\n[REPAIRED SQL]")
+        print(sql)
 
-        repaired_sql = clean_sql(raw_sql)
-
-        print("[REPAIRED SQL]")
-        print(repaired_sql)
-
-        return repaired_sql
+        return sql
 
     except Exception as e:
 
@@ -1238,16 +1174,17 @@ Return ONLY corrected SQL.
 
 
 # ============================================================
-# EXECUTE SQL WITH RETRY
+# SQL RETRY
 # ============================================================
 
 def execute_sql_with_retry(
     question,
+    intent,
     sql,
     max_retries=3
 ):
 
-    current_sql = clean_sql(sql)
+    current_sql = sql
 
     last_error = None
 
@@ -1256,7 +1193,7 @@ def execute_sql_with_retry(
     ):
 
         print(
-            f"[SQL ATTEMPT] {attempt + 1}"
+            f"\n[SQL ATTEMPT] {attempt + 1}"
         )
 
         try:
@@ -1284,16 +1221,17 @@ def execute_sql_with_retry(
             if attempt >= max_retries:
                 break
 
-            repaired_sql = repair_sql(
+            repaired = repair_sql(
                 question,
+                intent,
                 current_sql,
                 last_error
             )
 
-            if not repaired_sql:
+            if not repaired:
                 break
 
-            current_sql = repaired_sql
+            current_sql = repaired
 
     return {
         "success": False,
@@ -1304,203 +1242,184 @@ def execute_sql_with_retry(
 
 
 # ============================================================
-# FORMAT SQL RESULT
+# FORMAT BUSINESS ANSWER
 # ============================================================
 
 def format_business_answer(
     question,
+    intent,
     data
 ):
 
     if not data:
 
         return (
-            "No matching records were found."
+            "No matching records were "
+            "found in the database."
         )
 
-    result_text = ""
-
-    for index, row in enumerate(
-        data,
-        start=1
-    ):
-
-        result_text += (
-            f"Record {index}: {row}\n"
+    result_text = "\n".join(
+        f"Record {i}: {row}"
+        for i, row in enumerate(
+            data,
+            1
         )
+    )
 
     prompt = f"""
-You are an AI Business Assistant.
+Answer the user's question using ONLY
+the database result.
 
-Convert the database result into a simple,
-clear business answer.
-
-================================================
-QUESTION
-================================================
-
+USER QUESTION:
 {question}
 
-================================================
-DATABASE RESULT
-================================================
+INTENT:
+{intent}
 
+DATABASE RESULT:
 {result_text}
 
-================================================
-RULES
-================================================
+Rules:
 
-1. Use ONLY the supplied database result.
+Answer the actual question.
 
-2. Never invent information.
+Do not invent information.
 
-3. Answer exactly what the user asked.
+Do not change database values.
 
-4. If the user asks "which", show actual
-   names/items from the result.
+If the user asks WHO,
+provide the name.
 
-5. If the user asks "who", show actual
-   customer/person names from the result.
+If the user asks WHICH,
+provide the entities.
 
-6. If the user asks for TOP N, show ALL
-   requested records.
+If multiple rows exist,
+explain them clearly.
 
-7. If the user asks "how many", clearly
-   give the count.
+If it is a count,
+state the count.
 
-8. For low stock questions, show product,
-   stock quantity and reorder level.
+If it is revenue/cost/profit/loss,
+explain the returned values naturally.
 
-9. For expensive products, show product
-   name and price.
+Do not show SQL.
 
-10. For customer spending questions,
-    show customer name and spending.
+Do not show Python dictionaries.
 
-11. For complex customer/product questions,
-    clearly connect the customer with the
-    products returned.
+Do not mention internal routing.
 
-12. Do not show Python dictionaries.
-
-13. Do not show SQL.
-
-14. Keep the answer easy to understand.
-
-15. Use bullet points for multiple records.
-
-16. Use ₹ when a value represents
-    Indian currency.
-
-17. Never add information that is not
-    present in the database result.
-
-Return ONLY the final business answer.
+Return ONLY the answer.
 """
+
+    if ask_llm is None:
+
+        return "\n".join(
+            " | ".join(
+                f"{k}: {v}"
+                for k, v in row.items()
+            )
+            for row in data
+        )
 
     try:
 
-        if ask_llm is None:
+        answer = ask_llm(
+            prompt
+        ).strip()
 
-            raise RuntimeError(
-                "LLM is not available."
-            )
-
-        answer = ask_llm(prompt)
-
-        return answer.strip()
+        if answer:
+            return answer
 
     except Exception as e:
 
         print(
-            "[ANSWER FORMAT ERROR]:",
+            "[ANSWER ERROR]:",
             e
         )
 
-        lines = []
-
-        for row in data:
-
-            values = []
-
-            for key, value in row.items():
-
-                values.append(
-                    f"{key}: {value}"
-                )
-
-            lines.append(
-                " | ".join(values)
-            )
-
-        return "\n".join(lines)
+    return "\n".join(
+        " | ".join(
+            f"{k}: {v}"
+            for k, v in row.items()
+        )
+        for row in data
+    )
 
 
 # ============================================================
-# RAG ANSWER
+# RAG RETRIEVAL
+# ============================================================
+
+def retrieve_rag_context(question):
+
+    if retrieve_context is None:
+
+        raise RuntimeError(
+            "RAG pipeline is not available."
+        )
+
+    try:
+
+        return retrieve_context(
+            question,
+            n_results=5
+        )
+
+    except TypeError:
+
+        return retrieve_context(
+            question
+        )
+
+
+# ============================================================
+# FORMAT RAG ANSWER
 # ============================================================
 
 def format_rag_answer(
     question,
+    intent,
     context
 ):
 
     if not context:
 
         return (
-            "I could not find relevant information "
-            "in the business documents."
+            "I could not find relevant "
+            "information in the documents."
         )
 
     prompt = f"""
-You are an AI Business Assistant.
-
 Answer the user's question using ONLY
-the provided business documents.
+the retrieved document context.
 
-================================================
-QUESTION
-================================================
-
+USER QUESTION:
 {question}
 
-================================================
-DOCUMENT INFORMATION
-================================================
+INTENT:
+{intent}
 
+DOCUMENT CONTEXT:
 {context}
 
-================================================
-RULES
-================================================
+Do not invent information.
 
-1. Do not invent information.
-
-2. Use only the provided documents.
-
-3. Keep the answer simple.
-
-4. If the answer is not available,
-   clearly say so.
+If the context does not contain
+the answer, say so.
 
 Return ONLY the answer.
 """
 
+    if ask_llm is None:
+        return str(context)
+
     try:
 
-        if ask_llm is None:
+        return ask_llm(
+            prompt
+        ).strip()
 
-            return str(context)
-
-        return ask_llm(prompt).strip()
-
-    except Exception as e:
-
-        print(
-            "[RAG ANSWER ERROR]:",
-            e
-        )
+    except Exception:
 
         return str(context)
 
@@ -1511,24 +1430,13 @@ Return ONLY the answer.
 
 def route_question(question):
 
-    question = question.strip()
-
-    print(
-        "\n=========================================="
-    )
-
-    print(
-        "[ROUTER RECEIVED]:",
+    question = str(
         question
-    )
+    ).strip()
 
-    print(
-        "=========================================="
-    )
-
-    # ========================================================
-    # EMPTY QUESTION
-    # ========================================================
+    print("\n================================")
+    print("[QUESTION]", question)
+    print("================================")
 
     if not question:
 
@@ -1536,229 +1444,262 @@ def route_question(question):
             "type": "unknown",
             "data": None,
             "sql": None,
-            "answer": (
-                "Please enter a business question."
-            )
+            "answer": "Please enter a question."
         }
+
+    # ========================================================
+    # VERY IMPORTANT
+    # DATABASE STRUCTURE QUESTIONS ARE HANDLED FIRST
+    #
+    # LLM IS NOT USED FOR THESE QUESTIONS.
+    # ========================================================
+
+    structure_result = (
+        handle_database_structure_question(
+            question
+        )
+    )
+
+    if structure_result is not None:
+
+        print(
+            "[ROUTE] DATABASE_OVERVIEW"
+        )
+
+        print(
+            "[STRUCTURE RESULT]",
+            structure_result
+        )
+
+        return structure_result
+
+
+    # ========================================================
+    # UNDERSTAND NORMAL QUESTION
+    # ========================================================
+
+    understanding = understand_question(
+        question
+    )
+
+    route = understanding["route"]
+
+    intent = understanding["intent"]
+
+    print(
+        "[ROUTE]",
+        route
+    )
+
+    print(
+        "[INTENT]",
+        intent
+    )
+
 
     # ========================================================
     # DATABASE OVERVIEW
     # ========================================================
 
-    if is_database_overview_question(
-        question
-    ):
-
-        print(
-            "🔥 DATABASE OVERVIEW DETECTED 🔥"
-        )
+    if route == "DATABASE_OVERVIEW":
 
         try:
 
-            answer = (
-                generate_database_overview(
-                    question
-                )
-            )
+            answer = generate_database_overview()
 
             return {
                 "type": "database_overview",
-                "data": None,
+
+                "data": get_database_information(),
+
                 "sql": None,
+
+                "intent": intent,
+
                 "answer": answer
             }
 
         except Exception as e:
 
-            print(
-                "[OVERVIEW ERROR]:",
-                e
-            )
-
             return {
                 "type": "error",
+
                 "data": None,
+
                 "sql": None,
-                "message": (
-                    f"Database overview error: {e}"
-                )
+
+                "intent": intent,
+
+                "message": str(e),
+
+                "answer":
+                    "I could not read the database."
             }
 
-    # ========================================================
-    # CLASSIFICATION
-    # ========================================================
-
-    route_type = classify_question(
-        question
-    )
-
-    print(
-        "[ROUTER] Question type:",
-        route_type
-    )
 
     # ========================================================
-    # SQL ROUTE
+    # SQL
     # ========================================================
 
-    if route_type == "sql":
-
-        print(
-            "[ROUTER] Generating SQL..."
-        )
+    if route == "SQL":
 
         sql = generate_sql(
-            question
+            question,
+            intent
         )
 
         if not sql:
 
             return {
                 "type": "error",
+
                 "data": None,
+
                 "sql": None,
-                "message": (
-                    "Unable to generate SQL "
-                    "for this business question."
-                )
+
+                "intent": intent,
+
+                "answer":
+                    "I could not generate "
+                    "a database query."
             }
 
         result = execute_sql_with_retry(
             question,
-            sql,
-            max_retries=3
+            intent,
+            sql
         )
 
-        if result["success"]:
-
-            answer = (
-                format_business_answer(
-                    question,
-                    result["data"]
-                )
-            )
-
-            return {
-                "type": "sql",
-                "data": result["data"],
-                "sql": result["sql"],
-                "attempt": result["attempt"],
-                "answer": answer
-            }
-
-        return {
-            "type": "error",
-            "data": None,
-            "sql": result["sql"],
-            "message": result["error"],
-            "answer": (
-                "I could not generate a valid query "
-                "for that question."
-            )
-        }
-
-    # ========================================================
-    # RAG ROUTE
-    # ========================================================
-
-    if route_type == "rag":
-
-        print(
-            "[ROUTER] Retrieving business documents..."
-        )
-
-        if retrieve_context is None:
+        if not result["success"]:
 
             return {
                 "type": "error",
+
                 "data": None,
-                "sql": None,
-                "message": (
-                    "RAG pipeline is not available."
-                )
+
+                "sql": result["sql"],
+
+                "intent": intent,
+
+                "message": result["error"],
+
+                "answer":
+                    "I could not execute "
+                    "the database query."
             }
+
+        data = result["data"]
+
+        answer = format_business_answer(
+            question,
+            intent,
+            data
+        )
+
+        return {
+            "type": "sql",
+
+            "data": data,
+
+            "sql": result["sql"],
+
+            "attempt": result["attempt"],
+
+            "intent": intent,
+
+            "answer": answer
+        }
+
+
+    # ========================================================
+    # RAG
+    # ========================================================
+
+    if route == "RAG":
 
         try:
 
-            context = retrieve_context(
-                question,
-                n_results=5
+            context = retrieve_rag_context(
+                question
             )
 
             answer = format_rag_answer(
                 question,
+                intent,
                 context
             )
 
             return {
                 "type": "rag",
+
                 "data": {
                     "question": question,
                     "context": context
                 },
+
                 "sql": None,
+
+                "intent": intent,
+
                 "answer": answer
             }
 
         except Exception as e:
 
-            print(
-                "[RAG ERROR]:",
-                e
-            )
-
             return {
                 "type": "error",
+
                 "data": None,
+
                 "sql": None,
-                "message": str(e)
+
+                "intent": intent,
+
+                "message": str(e),
+
+                "answer":
+                    "I could not retrieve "
+                    "the business documents."
             }
+
 
     # ========================================================
     # FALLBACK
     # ========================================================
 
-    print(
-        "[ROUTER] Unknown question."
-    )
-
     return {
         "type": "unknown",
+
         "data": None,
+
         "sql": None,
-        "answer": (
-            "I couldn't understand the question. "
-            "Please ask a business-related question."
-        )
+
+        "intent": intent,
+
+        "answer":
+            "I could not determine "
+            "how to answer that question."
     }
 
 
 # ============================================================
-# TERMINAL TEST MODE
+# TERMINAL TEST
 # ============================================================
 
 if __name__ == "__main__":
 
     print(
-        "=========================================="
-    )
-
-    print(
-        "🤖 AI BUSINESS ASSISTANT"
-    )
-
-    print(
-        "=========================================="
+        "AI BUSINESS ASSISTANT - ROUTER TEST"
     )
 
     while True:
 
         question = input(
-            "\nAsk a business question "
-            "(type 'exit' to stop): "
-        )
+            "\nAsk a question "
+            "(type exit to stop): "
+        ).strip()
 
-        if question.lower().strip() == "exit":
+        if question.lower() == "exit":
             break
 
         result = route_question(
@@ -1772,29 +1713,39 @@ if __name__ == "__main__":
         print(
             result.get(
                 "answer",
-                result.get(
-                    "message",
-                    "No answer available."
-                )
+                "No answer."
             )
         )
 
-        if result.get("sql"):
+        print(
+            "\n========== SQL =========="
+        )
 
-            print(
-                "\n========== SQL =========="
+        print(
+            result.get(
+                "sql",
+                "None"
             )
+        )
 
-            print(
-                result["sql"]
+        print(
+            "\n========== TYPE =========="
+        )
+
+        print(
+            result.get(
+                "type",
+                "unknown"
             )
+        )
 
-        if result.get("data") is not None:
+        print(
+            "\n========== INTENT =========="
+        )
 
-            print(
-                "\n========== ROWS =========="
+        print(
+            result.get(
+                "intent",
+                ""
             )
-
-            print(
-                result["data"]
-            )
+        )
