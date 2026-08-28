@@ -1,41 +1,158 @@
-
 import json
 
-from backend.router import route_question
-from LLM.model import ask_llm
-from rag.rag_pipeline import retrieve_context
+from sqlalchemy import inspect
+
+from backend.db import engine
 
 
 # =========================================================
-# SQL RESULT -> LLM ANSWER
+# DATABASE TABLES
 # =========================================================
 
-def format_sql_result(question: str, data) -> str:
-    """
-    Convert exact SQL/database results into a natural-language
-    answer.
+def get_real_database_tables():
+    try:
+        inspector = inspect(engine)
+        return sorted(inspector.get_table_names())
 
-    IMPORTANT:
-    The LLM must preserve ALL records returned by the database.
-    It must not invent, remove, filter, or modify database data.
-    """
+    except Exception as e:
+        print(f"[DATABASE TABLE ERROR] {e}")
+        return []
 
-    # -----------------------------------------------------
-    # No result
-    # -----------------------------------------------------
 
-    if data is None:
-        return "No matching business data was found."
+# =========================================================
+# DATABASE STRUCTURE QUESTIONS
+# =========================================================
 
-    if isinstance(data, list) and len(data) == 0:
-        return "No matching business data was found."
+def handle_schema_question(question: str):
 
-    # -----------------------------------------------------
-    # Convert database result to JSON
-    # -----------------------------------------------------
+    q = question.lower().strip()
+
+    # Ask LLM to understand schema-related questions.
+    # No fixed list of user questions.
 
     try:
+        from LLM.model import ask_llm
 
+        prompt = f"""
+You are an intent detector for a business database.
+
+Determine whether this user question is asking about the
+DATABASE STRUCTURE itself.
+
+Examples of database-structure requests include:
+- number of tables
+- list of tables
+- database structure
+- what tables exist
+- show database tables
+- what columns exist
+- database schema
+
+USER QUESTION:
+{question}
+
+Return ONLY valid JSON:
+
+{{
+    "is_schema_question": true
+}}
+
+or
+
+{{
+    "is_schema_question": false
+}}
+"""
+
+        response = ask_llm(prompt)
+
+        response = response.strip()
+
+        if response.startswith("```"):
+            response = response.replace("```json", "")
+            response = response.replace("```", "")
+            response = response.strip()
+
+        result = json.loads(response)
+
+        if not result.get("is_schema_question", False):
+            return None
+
+    except Exception as e:
+        print(f"[SCHEMA INTENT ERROR] {e}")
+
+        # If LLM is unavailable, don't block normal questions.
+        return None
+
+    tables = get_real_database_tables()
+
+    if not tables:
+        return {
+            "answer": "I couldn't find any tables in the connected database.",
+            "sql": None,
+            "data": [],
+            "tables": [],
+            "type": "database_overview",
+            "intent": "database structure"
+        }
+
+    # Ask LLM what the user wants to know about the tables.
+    try:
+
+        from LLM.model import ask_llm
+
+        table_text = "\n".join(
+            f"{i}. {table}"
+            for i, table in enumerate(tables, 1)
+        )
+
+        prompt = f"""
+The database contains these tables:
+
+{table_text}
+
+USER QUESTION:
+{question}
+
+Answer the user's database-structure question using ONLY
+the table list above.
+
+Do not invent tables.
+
+Return ONLY the answer.
+"""
+
+        answer = ask_llm(prompt).strip()
+
+    except Exception:
+        answer = (
+            f"The database contains {len(tables)} tables:\n\n"
+            + "\n".join(
+                f"{i}. {table}"
+                for i, table in enumerate(tables, 1)
+            )
+        )
+
+    return {
+        "answer": answer,
+        "sql": None,
+        "data": [],
+        "tables": tables,
+        "type": "database_overview",
+        "intent": "database structure"
+    }
+
+
+# =========================================================
+# SQL RESULT FORMATTER
+# =========================================================
+
+def format_sql_result(question, data):
+
+    if not data:
+        return "No matching business data was found."
+
+    try:
         serialized_data = json.dumps(
             data,
             default=str,
@@ -43,18 +160,16 @@ def format_sql_result(question: str, data) -> str:
         )
 
     except Exception:
-
         serialized_data = str(data)
 
-    # -----------------------------------------------------
-    # LLM Prompt
-    # -----------------------------------------------------
+    try:
 
-    prompt = f"""
+        from LLM.model import ask_llm
+
+        prompt = f"""
 You are an AI Business Assistant.
 
-Answer the user's business question using ONLY the
-database result provided below.
+Answer the user's question using ONLY the database result.
 
 USER QUESTION:
 {question}
@@ -62,420 +177,387 @@ USER QUESTION:
 DATABASE RESULT:
 {serialized_data}
 
-STRICT RULES:
+RULES:
 
-1. Use ONLY information present in DATABASE RESULT.
+1. Use only the database result.
+2. Never invent information.
+3. Never change numbers.
+4. Preserve names and values.
+5. Answer exactly what the user asked.
+6. If multiple records exist, clearly list them.
+7. Keep the answer concise and professional.
+8. Do not mention SQL, RAG, routing or LLM.
 
-2. NEVER invent business facts.
-
-3. NEVER invent products, customers, suppliers,
-   categories, prices, quantities, dates, or numbers.
-
-4. NEVER change any value from DATABASE RESULT.
-
-5. NEVER omit any database record.
-
-6. If DATABASE RESULT contains 5 records,
-   the final answer MUST include all 5 records.
-
-7. If DATABASE RESULT contains 10 records,
-   the final answer MUST include all 10 records.
-
-8. For list questions, preserve the COMPLETE list.
-
-9. Do NOT filter records yourself.
-
-10. Do NOT remove records because you think they
-    are unimportant.
-
-11. Do NOT add information that is not present
-    in DATABASE RESULT.
-
-12. If the result is empty, say:
-    "No matching business data was found."
-
-13. Answer the user's actual question directly.
-
-14. Keep the answer clear and business-friendly.
-
-15. For ranking questions such as:
-    - most expensive
-    - cheapest
-    - highest
-    - lowest
-    - most products
-    - least products
-
-    trust the ordering/calculation already performed
-    by the database query.
-
-16. Do not perform a different calculation yourself
-    when the database has already provided the result.
-
-17. Preserve exact database numbers.
-
-18. If a product name appears in DATABASE RESULT,
-    use that exact product name.
-
-19. If a supplier name appears in DATABASE RESULT,
-    use that exact supplier name.
-
-20. If a category name appears in DATABASE RESULT,
-    use that exact category name.
-
-21. If multiple records are returned, present them
-    as a numbered or bulleted list when appropriate.
-
-22. Do not mention:
-    - SQL
-    - database query
-    - prompt
-    - RAG
-    - retrieval
-    - internal processing
-    - LLM
-
-Return ONLY the final business answer.
+Return ONLY the final answer.
 """
-
-    # -----------------------------------------------------
-    # Ask LLM
-    # -----------------------------------------------------
-
-    try:
 
         answer = ask_llm(prompt)
 
-        return answer.strip()
+        if answer:
+            return answer.strip()
 
     except Exception as e:
+        print(f"[SQL ANSWER ERROR] {e}")
 
-        print(
-            f"[SQL LLM ERROR] {str(e)}"
+    return format_raw_data(data)
+
+
+# =========================================================
+# RAW DATA FALLBACK
+# =========================================================
+
+def format_raw_data(data):
+
+    if isinstance(data, list):
+
+        lines = []
+
+        for row in data:
+
+            if isinstance(row, dict):
+
+                values = []
+
+                for key, value in row.items():
+                    values.append(
+                        f"{key}: {value}"
+                    )
+
+                lines.append(
+                    " | ".join(values)
+                )
+
+            else:
+                lines.append(str(row))
+
+        return "\n".join(lines)
+
+    if isinstance(data, dict):
+
+        return "\n".join(
+            f"{key}: {value}"
+            for key, value in data.items()
         )
 
-        # -------------------------------------------------
-        # Safe fallback
-        # -------------------------------------------------
-
-        if isinstance(data, list):
-
-            lines = []
-
-            for item in data:
-
-                if isinstance(item, dict):
-
-                    parts = []
-
-                    for key, value in item.items():
-
-                        parts.append(
-                            f"{key}: {value}"
-                        )
-
-                    lines.append(
-                        "- " + ", ".join(parts)
-                    )
-
-                else:
-
-                    lines.append(
-                        f"- {item}"
-                    )
-
-            return "\n".join(lines)
-
-        if isinstance(data, dict):
-
-            return "\n".join(
-                f"{key}: {value}"
-                for key, value in data.items()
-            )
-
-        return str(data)
+    return str(data)
 
 
 # =========================================================
-# RAG RESULT -> LLM ANSWER
+# RAG RESULT FORMATTER
 # =========================================================
 
-def format_rag_result(
-    question: str,
-    context: str
-) -> str:
-    """
-    Convert retrieved business-document context into
-    a natural-language answer.
+def format_rag_result(question, context):
 
-    The LLM can only use the retrieved context.
-    """
-
-    # -----------------------------------------------------
-    # No RAG context
-    # -----------------------------------------------------
-
-    if not context or not context.strip():
+    if not context:
 
         return (
-            "The available business information is not "
-            "sufficient to answer this question."
+            "The available business information "
+            "is not sufficient to answer this question."
         )
 
-    # -----------------------------------------------------
-    # RAG Prompt
-    # -----------------------------------------------------
+    try:
 
-    prompt = f"""
+        from LLM.model import ask_llm
+
+        prompt = f"""
 You are an AI Business Assistant.
 
-Answer the user's question using ONLY the business
-information contained in the retrieved context.
+Answer the user's question using ONLY the
+provided business-document context.
 
 USER QUESTION:
 {question}
 
-RETRIEVED BUSINESS CONTEXT:
+BUSINESS CONTEXT:
 {context}
 
-STRICT RULES:
+RULES:
 
-1. Use ONLY information contained in the context.
+1. Use only the supplied context.
+2. Never invent information.
+3. Never guess missing information.
+4. Answer directly.
+5. Keep the answer concise.
+6. Do not mention RAG, embeddings or LLM.
 
-2. NEVER invent business facts.
-
-3. NEVER guess missing information.
-
-4. If the context does not contain enough information,
-   clearly say that the available business information
-   is not sufficient.
-
-5. Do not create policies or rules that are not present
-   in the context.
-
-6. Preserve important names, values, rules, and details
-   exactly as provided.
-
-7. Answer the user's actual question directly.
-
-8. Keep the answer clear and concise.
-
-9. Do not mention:
-   - RAG
-   - embeddings
-   - vector database
-   - retrieval
-   - prompt
-   - LLM
-   - internal processing
-
-Return ONLY the final business answer.
+Return ONLY the final answer.
 """
-
-    # -----------------------------------------------------
-    # Ask LLM
-    # -----------------------------------------------------
-
-    try:
 
         answer = ask_llm(prompt)
 
-        return answer.strip()
+        if answer:
+            return answer.strip()
 
     except Exception as e:
 
-        print(
-            f"[RAG LLM ERROR] {str(e)}"
-        )
+        print(f"[RAG ANSWER ERROR] {e}")
 
-        return (
-            "I was unable to generate an answer from "
-            "the available business information."
-        )
+    return str(context)
 
 
 # =========================================================
-# MAIN AI BUSINESS QUESTION
+# FIND TABLES FROM SQL
 # =========================================================
 
-def answer_business_question(
-    question: str
-) -> str:
-    """
-    Main AI Business Assistant pipeline.
+def get_tables_from_sql(sql):
 
-    Architecture:
+    if not sql:
+        return []
 
-        USER QUESTION
-              |
-              v
-        ROUTER / CLASSIFIER
-              |
-        +-----+-----+
-        |           |
-       SQL         RAG
-        |           |
-        v           v
-    DATABASE    DOCUMENTS
-        |           |
-        +-----+-----+
-              |
-              v
-             LLM
-              |
-              v
-        FINAL ANSWER
-    """
+    try:
 
-    # -----------------------------------------------------
-    # Clean question
-    # -----------------------------------------------------
+        inspector = inspect(engine)
 
-    question = question.strip()
+        real_tables = set(
+            inspector.get_table_names()
+        )
 
-    # -----------------------------------------------------
-    # Empty question
-    # -----------------------------------------------------
+        found_tables = []
+
+        for table in real_tables:
+
+            pattern = rf"\b{table}\b"
+
+            if __import__("re").search(
+                pattern,
+                sql,
+                flags=__import__("re").IGNORECASE
+            ):
+                found_tables.append(table)
+
+        return sorted(found_tables)
+
+    except Exception as e:
+
+        print(f"[SQL TABLE DETECTION ERROR] {e}")
+
+        return []
+
+
+# =========================================================
+# MAIN AI FUNCTION
+# =========================================================
+
+def answer_business_question(question: str):
+
+    question = str(question).strip()
 
     if not question:
 
-        return "Please enter a business question."
+        return {
+            "answer": "Please enter a business question.",
+            "sql": None,
+            "data": [],
+            "tables": [],
+            "type": "unknown",
+            "intent": ""
+        }
 
     try:
+
+        # =================================================
+        # DATABASE STRUCTURE
+        # =================================================
+
+        schema_result = handle_schema_question(
+            question
+        )
+
+        if schema_result is not None:
+
+            return schema_result
+
 
         # =================================================
         # ROUTER
         # =================================================
 
+        from backend.router import route_question
+
         route = route_question(question)
 
         if not isinstance(route, dict):
 
-            return (
-                "Unable to determine how to answer "
-                "the business question."
-            )
+            return {
+                "answer": (
+                    "Unable to determine how to "
+                    "answer the question."
+                ),
+                "sql": None,
+                "data": [],
+                "tables": [],
+                "type": "error",
+                "intent": ""
+            }
 
-        route_type = route.get("type")
 
         # =================================================
-        # SQL ROUTE
+        # COMMON INFORMATION
+        # =================================================
+
+        route_type = route.get(
+            "type",
+            "unknown"
+        )
+
+        sql = route.get(
+            "sql"
+        )
+
+        data = route.get(
+            "data"
+        )
+
+        intent = route.get(
+            "intent",
+            ""
+        )
+
+
+        # =================================================
+        # SQL
         # =================================================
 
         if route_type == "sql":
 
-            data = route.get("data")
-
-            return format_sql_result(
+            answer = format_sql_result(
                 question,
                 data
             )
 
+            tables = get_tables_from_sql(
+                sql
+            )
+
+            return {
+                "answer": answer,
+                "sql": sql,
+                "data": data or [],
+                "tables": tables,
+                "type": "sql",
+                "intent": intent
+            }
+
+
         # =================================================
-        # RAG ROUTE
+        # DATABASE OVERVIEW
+        # =================================================
+
+        if route_type == "database_overview":
+
+            return {
+                "answer": route.get(
+                    "answer",
+                    "Database information retrieved."
+                ),
+                "sql": None,
+                "data": [],
+                "tables": get_real_database_tables(),
+                "type": "database_overview",
+                "intent": intent
+            }
+
+
+        # =================================================
+        # RAG
         # =================================================
 
         if route_type == "rag":
 
-            # -------------------------------------------------
-            # Retrieve business context
-            # -------------------------------------------------
-
             try:
+
+                from rag.rag_pipeline import (
+                    retrieve_context
+                )
 
                 context = retrieve_context(
                     question,
                     n_results=5
                 )
 
+                answer = format_rag_result(
+                    question,
+                    context
+                )
+
             except Exception as e:
 
                 print(
-                    f"[RAG RETRIEVAL ERROR] {str(e)}"
+                    f"[RAG RETRIEVAL ERROR] {e}"
                 )
 
-                return (
-                    "I was unable to retrieve the relevant "
-                    "business information."
-                )
+                return {
+                    "answer": (
+                        "I was unable to retrieve "
+                        "the relevant business information."
+                    ),
+                    "sql": None,
+                    "data": [],
+                    "tables": [],
+                    "type": "error",
+                    "intent": intent
+                }
 
-            # -------------------------------------------------
-            # Generate answer
-            # -------------------------------------------------
+            return {
+                "answer": answer,
+                "sql": None,
+                "data": [],
+                "tables": [],
+                "type": "rag",
+                "intent": intent
+            }
 
-            return format_rag_result(
-                question,
-                context
-            )
 
         # =================================================
-        # ROUTER ERROR
+        # ERROR
         # =================================================
 
         if route_type == "error":
 
-            error_message = route.get(
-                "message",
-                "Unknown routing error."
-            )
+            return {
+                "answer": (
+                    "I was unable to process "
+                    "that business question."
+                ),
+                "sql": sql,
+                "data": data or [],
+                "tables": get_tables_from_sql(sql),
+                "type": "error",
+                "intent": intent
+            }
 
-            print(
-                f"[ROUTER ERROR] {error_message}"
-            )
-
-            return (
-                "I was unable to process that business "
-                "question. Please try again."
-            )
 
         # =================================================
         # UNKNOWN
         # =================================================
 
-        return (
-            "I could not determine how to answer "
-            "that business question."
-        )
+        return {
+            "answer": (
+                "I could not determine how to "
+                "answer that business question."
+            ),
+            "sql": sql,
+            "data": data or [],
+            "tables": get_tables_from_sql(sql),
+            "type": "unknown",
+            "intent": intent
+        }
 
-    # =====================================================
-    # GLOBAL ERROR
-    # =====================================================
 
     except Exception as e:
 
         print(
-            f"[AI SERVICE ERROR] {str(e)}"
+            f"[AI SERVICE ERROR] {e}"
         )
 
-        return (
-            "Unable to process the business question "
-            "at the moment."
-        )
-
-
-# =========================================================
-# TEST MODE
-# =========================================================
-
-if __name__ == "__main__":
-
-    print("=" * 60)
-    print("AI BUSINESS ASSISTANT")
-    print("=" * 60)
-
-    while True:
-
-        question = input(
-            "\nAsk a business question "
-            "(type 'exit' to stop): "
-        )
-
-        if question.lower().strip() == "exit":
-            break
-
-        answer = answer_business_question(
-            question
-        )
-
-        print("\nAI Answer:\n")
-        print(answer)
+        return {
+            "answer": (
+                "Unable to process the business "
+                "question at the moment."
+            ),
+            "sql": None,
+            "data": [],
+            "tables": [],
+            "type": "error",
+            "intent": ""
+        }
