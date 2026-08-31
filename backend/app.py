@@ -11,263 +11,7 @@ from backend.router import route_question
 st.set_page_config(
     page_title="AI Business Assistant",
     page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-
-# ============================================================
-# CUSTOM CSS
-# ============================================================
-
-st.markdown(
-    """
-    <style>
-
-    /* ==============================
-       MAIN BACKGROUND
-    ============================== */
-
-    .stApp {
-        background-color: #0b0f14;
-        color: #ffffff;
-    }
-
-    .main .block-container {
-        max-width: 1150px;
-        padding-top: 35px;
-        padding-bottom: 120px;
-    }
-
-
-    /* ==============================
-       SIDEBAR
-    ============================== */
-
-    section[data-testid="stSidebar"] {
-        background-color: #10151c;
-        border-right: 1px solid #252c36;
-    }
-
-    section[data-testid="stSidebar"] .block-container {
-        padding: 30px 20px;
-    }
-
-
-    /* ==============================
-       SIDEBAR TITLE
-    ============================== */
-
-    .sidebar-title {
-        font-size: 22px;
-        font-weight: 700;
-        color: white;
-        margin-bottom: 5px;
-    }
-
-    .sidebar-subtitle {
-        font-size: 13px;
-        color: #8f9aaa;
-        margin-bottom: 25px;
-    }
-
-
-    /* ==============================
-       HEADER
-    ============================== */
-
-    .header-box {
-        background-color: #151a22;
-        border: 1px solid #2a323d;
-        border-radius: 16px;
-        padding: 28px 32px;
-        margin-bottom: 25px;
-    }
-
-    .header-title {
-        font-size: 30px;
-        font-weight: 700;
-        color: white;
-        margin-bottom: 5px;
-    }
-
-    .header-subtitle {
-        font-size: 14px;
-        color: #8f9aaa;
-    }
-
-
-    /* ==============================
-       WELCOME
-    ============================== */
-
-    .welcome-box {
-        background-color: #151a22;
-        border: 1px solid #2a323d;
-        border-radius: 16px;
-        padding: 55px 30px;
-        text-align: center;
-        margin-bottom: 30px;
-    }
-
-    .welcome-icon {
-        font-size: 45px;
-        margin-bottom: 15px;
-    }
-
-    .welcome-title {
-        font-size: 27px;
-        font-weight: 650;
-        color: white;
-        margin-bottom: 10px;
-    }
-
-    .welcome-text {
-        font-size: 14px;
-        color: #8f9aaa;
-    }
-
-
-    /* ==============================
-       USER MESSAGE
-    ============================== */
-
-    .user-box {
-        background-color: #1b212a;
-        border: 1px solid #303946;
-        border-radius: 14px;
-        padding: 18px 22px;
-        margin-top: 20px;
-        margin-bottom: 20px;
-    }
-
-    .user-label {
-        font-size: 12px;
-        font-weight: 600;
-        color: #8f9aaa;
-        margin-bottom: 7px;
-        text-transform: uppercase;
-    }
-
-    .user-question {
-        color: white;
-        font-size: 15px;
-    }
-
-
-    /* ==============================
-       ANSWER
-    ============================== */
-
-    .answer-heading {
-        font-size: 23px;
-        font-weight: 650;
-        color: white;
-        margin-top: 25px;
-        margin-bottom: 10px;
-    }
-
-    .answer-box {
-        background-color: #151a22;
-        border: 1px solid #303946;
-        border-radius: 14px;
-        padding: 22px;
-        color: #f5f7fa;
-        font-size: 15px;
-        line-height: 1.7;
-        margin-bottom: 20px;
-    }
-
-
-    /* ==============================
-       SQL
-    ============================== */
-
-    .section-heading {
-        font-size: 21px;
-        font-weight: 650;
-        color: white;
-        margin-top: 25px;
-        margin-bottom: 10px;
-    }
-
-
-    /* ==============================
-       DETAILS
-    ============================== */
-
-    .details-box {
-        background-color: #12171e;
-        border: 1px solid #2a323d;
-        border-radius: 12px;
-        padding: 18px 20px;
-        margin-top: 15px;
-    }
-
-    .details-label {
-        color: #8f9aaa;
-        font-size: 12px;
-        margin-bottom: 4px;
-    }
-
-    .details-value {
-        color: white;
-        font-size: 14px;
-    }
-
-
-    /* ==============================
-       BUTTONS
-    ============================== */
-
-    .stButton > button {
-        border-radius: 10px;
-        background-color: #1b212a;
-        border: 1px solid #353e4b;
-        color: white;
-    }
-
-    .stButton > button:hover {
-        background-color: #242b35;
-        border-color: #667085;
-        color: white;
-    }
-
-
-    /* ==============================
-       CHAT INPUT
-    ============================== */
-
-    div[data-testid="stChatInput"] {
-        background-color: #151a22;
-    }
-
-    div[data-testid="stChatInput"] textarea {
-        background-color: #151a22 !important;
-        color: white !important;
-        border: 1px solid #343d49 !important;
-    }
-
-    div[data-testid="stChatInput"] textarea::placeholder {
-        color: #7f8997 !important;
-    }
-
-
-    /* ==============================
-       HIDE STREAMLIT MENU / FOOTER
-    ============================== */
-
-    #MainMenu {
-        visibility: hidden;
-    }
-
-    footer {
-        visibility: hidden;
-    }
-
-    </style>
-    """,
-    unsafe_allow_html=True
+    layout="wide"
 )
 
 
@@ -285,17 +29,10 @@ if "messages" not in st.session_state:
 
 with st.sidebar:
 
-    st.markdown(
-        """
-        <div class="sidebar-title">
-            🤖 AI Business Assistant
-        </div>
+    st.title("🤖 AI Business Assistant")
 
-        <div class="sidebar-subtitle">
-            Intelligent ERP business assistant
-        </div>
-        """,
-        unsafe_allow_html=True
+    st.caption(
+        "Intelligent assistant for your ERP business data."
     )
 
     st.divider()
@@ -309,18 +46,38 @@ with st.sidebar:
 
     st.divider()
 
-    st.markdown(
+    st.subheader("What I can do")
+
+    st.write(
         """
-        <div style="
-            color:#8f9aaa;
-            font-size:13px;
-            line-height:1.7;
-        ">
-            Ask natural-language questions about your
-            ERP database and business information.
-        </div>
-        """,
-        unsafe_allow_html=True
+        **Business Data**
+
+        • Sales analysis  
+        • Product information  
+        • Customer data  
+        • Supplier information  
+        • Inventory analysis  
+        • Order information  
+
+        **Database**
+
+        • Table information  
+        • Database structure  
+        • SQL queries  
+        • Database results  
+
+        **Business Knowledge**
+
+        • Company policies  
+        • Business documents  
+        • Internal information
+        """
+    )
+
+    st.divider()
+
+    st.caption(
+        "AI Business Assistant • ERP Intelligence"
     )
 
 
@@ -328,21 +85,10 @@ with st.sidebar:
 # MAIN HEADER
 # ============================================================
 
-st.markdown(
-    """
-    <div class="header-box">
+st.title("🤖 AI Business Assistant")
 
-        <div class="header-title">
-            🤖 AI Business Assistant
-        </div>
-
-        <div class="header-subtitle">
-            Ask questions about your business data
-        </div>
-
-    </div>
-    """,
-    unsafe_allow_html=True
+st.caption(
+    "Ask questions about your business data"
 )
 
 
@@ -350,29 +96,40 @@ st.markdown(
 # WELCOME SCREEN
 # ============================================================
 
-if not st.session_state.messages:
+if len(st.session_state.messages) == 0:
 
-    st.markdown(
-        """
-        <div class="welcome-box">
+    st.write("")
+    st.write("")
+    st.write("")
 
-            <div class="welcome-icon">
-                🤖
-            </div>
-
-            <div class="welcome-title">
-                How can I help you today?
-            </div>
-
-            <div class="welcome-text">
-                Ask anything about your business data,
-                database or business documents.
-            </div>
-
-        </div>
-        """,
-        unsafe_allow_html=True
+    left, center, right = st.columns(
+        [1, 2, 1]
     )
+
+    with center:
+
+        st.markdown(
+            "<div style='text-align:center;'>",
+            unsafe_allow_html=True
+        )
+
+        st.markdown(
+            "# 🤖"
+        )
+
+        st.markdown(
+            "## How can I help you today?"
+        )
+
+        st.write(
+            "Ask anything about your business data, "
+            "database or business documents."
+        )
+
+        st.markdown(
+            "</div>",
+            unsafe_allow_html=True
+        )
 
 
 # ============================================================
@@ -381,184 +138,157 @@ if not st.session_state.messages:
 
 for message in st.session_state.messages:
 
-    # --------------------------------------------------------
+    # ========================================================
     # USER MESSAGE
-    # --------------------------------------------------------
+    # ========================================================
 
     if message["role"] == "user":
 
-        question_text = str(
-            message.get("content", "")
-        )
+        with st.chat_message("user"):
 
-        st.markdown(
-            f"""
-            <div class="user-box">
+            st.write(
+                message["content"]
+            )
 
-                <div class="user-label">
-                    You
-                </div>
-
-                <div class="user-question">
-                    {question_text}
-                </div>
-
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-
-    # --------------------------------------------------------
+    # ========================================================
     # ASSISTANT MESSAGE
-    # --------------------------------------------------------
+    # ========================================================
 
     else:
 
-        answer = message.get(
-            "answer",
-            "No answer available."
-        )
+        with st.chat_message(
+            "assistant",
+            avatar="🤖"
+        ):
 
-        # Answer heading
-        st.markdown(
-            """
-            <div class="answer-heading">
-                💬 Answer
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+            # =================================================
+            # ANSWER
+            # =================================================
 
-        # IMPORTANT:
-        # Use st.write instead of putting answer
-        # inside HTML.
-        st.markdown(
-            f"""
-            <div class="answer-box">
-                {answer}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+            st.markdown("### 💬 Answer")
 
-
-        # ----------------------------------------------------
-        # SQL QUERY
-        # ----------------------------------------------------
-
-        sql = message.get("sql")
-
-        if sql:
-
-            st.markdown(
-                """
-                <div class="section-heading">
-                    🧠 SQL Query
-                </div>
-                """,
-                unsafe_allow_html=True
+            answer = message.get(
+                "answer",
+                "No answer available."
             )
 
-            st.code(
-                str(sql),
-                language="sql"
-            )
+            st.write(answer)
 
 
-        # ----------------------------------------------------
-        # DATABASE RESULT
-        # ----------------------------------------------------
+            # =================================================
+            # SQL QUERY
+            # =================================================
 
-        database_result = message.get(
-            "result"
-        )
+            sql = message.get("sql")
 
-        if database_result is not None:
+            if sql:
 
-            st.markdown(
-                """
-                <div class="section-heading">
-                    📊 Database Result
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+                st.markdown("### 🧠 SQL Query")
 
-            try:
+                st.code(
+                    sql,
+                    language="sql"
+                )
 
-                if isinstance(
-                    database_result,
-                    list
-                ):
 
-                    if len(database_result) > 0:
+            # =================================================
+            # DATABASE RESULT
+            # =================================================
+
+            data = message.get("data")
+
+            if data is not None:
+
+                st.markdown("### 📊 Database Result")
+
+                try:
+
+                    # -----------------------------------------
+                    # LIST
+                    # -----------------------------------------
+
+                    if isinstance(data, list):
+
+                        if len(data) > 0:
+
+                            df = pd.DataFrame(data)
+
+                            st.dataframe(
+                                df,
+                                use_container_width=True,
+                                hide_index=True
+                            )
+
+                        else:
+
+                            st.info(
+                                "No matching records found."
+                            )
+
+
+                    # -----------------------------------------
+                    # DICTIONARY
+                    # -----------------------------------------
+
+                    elif isinstance(data, dict):
+
+                        df = pd.DataFrame([data])
 
                         st.dataframe(
-                            pd.DataFrame(
-                                database_result
-                            ),
+                            df,
                             use_container_width=True,
                             hide_index=True
                         )
 
+
+                    # -----------------------------------------
+                    # OTHER DATA
+                    # -----------------------------------------
+
                     else:
 
-                        st.info(
-                            "No records found."
+                        st.write(data)
+
+                except Exception as e:
+
+                    print(
+                        f"[DISPLAY ERROR] {e}"
+                    )
+
+                    st.write(data)
+
+
+            # =================================================
+            # QUERY DETAILS
+            # =================================================
+
+            result_type = message.get(
+                "type"
+            )
+
+            intent = message.get(
+                "intent"
+            )
+
+            if result_type or intent:
+
+                with st.expander(
+                    "🔎 Query Details"
+                ):
+
+                    if result_type:
+
+                        st.write(
+                            "**Type:**",
+                            result_type
                         )
 
-                else:
+                    if intent:
 
-                    st.write(
-                        database_result
-                    )
-
-            except Exception:
-
-                st.write(
-                    database_result
-                )
-
-
-        # ----------------------------------------------------
-        # DETAILS
-        # ----------------------------------------------------
-
-        result_type = message.get(
-            "type"
-        )
-
-        intent = message.get(
-            "intent"
-        )
-
-        if result_type or intent:
-
-            with st.expander(
-                "🔎 Details",
-                expanded=False
-            ):
-
-                col1, col2 = st.columns(2)
-
-                with col1:
-
-                    st.caption("Type")
-
-                    st.write(
-                        result_type
-                        or "unknown"
-                    )
-
-                with col2:
-
-                    st.caption("Intent")
-
-                    st.write(
-                        intent
-                        or "Not available"
-                    )
+                        st.write(
+                            "**Intent:**",
+                            intent
+                        )
 
 
 # ============================================================
@@ -571,7 +301,7 @@ question = st.chat_input(
 
 
 # ============================================================
-# RECEIVE NEW QUESTION
+# PROCESS QUESTION
 # ============================================================
 
 if question:
@@ -580,6 +310,10 @@ if question:
 
     if question:
 
+        # ====================================================
+        # SAVE USER MESSAGE
+        # ====================================================
+
         st.session_state.messages.append(
             {
                 "role": "user",
@@ -587,91 +321,88 @@ if question:
             }
         )
 
+
+        # ====================================================
+        # PROCESS QUESTION
+        # ====================================================
+
+        with st.spinner(
+            "Analyzing your question..."
+        ):
+
+            try:
+
+                result = route_question(
+                    question
+                )
+
+
+                # =================================================
+                # SAVE ASSISTANT RESULT
+                # =================================================
+
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+
+                        "answer": result.get(
+                            "answer",
+                            "No answer available."
+                        ),
+
+                        "sql": result.get(
+                            "sql"
+                        ),
+
+                        "data": result.get(
+                            "data"
+                        ),
+
+                        "type": result.get(
+                            "type"
+                        ),
+
+                        "intent": result.get(
+                            "intent",
+                            ""
+                        )
+                    }
+                )
+
+
+            except Exception as e:
+
+                print(
+                    f"[FRONTEND ERROR] {e}"
+                )
+
+
+                # =================================================
+                # ERROR MESSAGE
+                # =================================================
+
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+
+                        "answer": (
+                            "Sorry, I couldn't process "
+                            "your question right now."
+                        ),
+
+                        "sql": None,
+
+                        "data": None,
+
+                        "type": "error",
+
+                        "intent": str(e)
+                    }
+                )
+
+
+        # ====================================================
+        # REFRESH
+        # ====================================================
+
         st.rerun()
-
-
-# ============================================================
-# PROCESS QUESTION
-# ============================================================
-
-if (
-    st.session_state.messages
-    and
-    st.session_state.messages[-1]["role"] == "user"
-    and
-    (
-        len(st.session_state.messages) == 1
-        or
-        st.session_state.messages[-2]["role"]
-        != "assistant"
-    )
-):
-
-    current_question = (
-        st.session_state.messages[-1]["content"]
-    )
-
-    with st.spinner(
-        "Analyzing your question..."
-    ):
-
-        try:
-
-            result = route_question(
-                current_question
-            )
-
-            # ----------------------------------------------
-            # Store complete result
-            # ----------------------------------------------
-
-            st.session_state.messages.append(
-                {
-                    "role": "assistant",
-
-                    "answer": result.get(
-                        "answer",
-                        "No answer available."
-                    ),
-
-                    "sql": result.get(
-                        "sql"
-                    ),
-
-                    "result": result.get(
-                        "result"
-                    ),
-
-                    "type": result.get(
-                        "type"
-                    ),
-
-                    "intent": result.get(
-                        "intent",
-                        ""
-                    )
-                }
-            )
-
-        except Exception as e:
-
-            st.session_state.messages.append(
-                {
-                    "role": "assistant",
-
-                    "answer": (
-                        "Sorry, something went wrong "
-                        "while processing your question."
-                    ),
-
-                    "sql": None,
-
-                    "result": None,
-
-                    "type": "error",
-
-                    "intent": str(e)
-                }
-            )
-
-    st.rerun()
